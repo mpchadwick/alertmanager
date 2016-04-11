@@ -173,6 +173,7 @@ func main() {
 		disp = NewDispatcher(alerts, NewRoute(conf.Route, nil), build(conf.Receivers), marker)
 
 		go disp.Run()
+		log.Infof("Alert manager is now listening on port %s", strings.TrimPrefix(*listenAddress, ":"))
 
 		return nil
 	}
