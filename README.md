@@ -7,7 +7,9 @@ The Alertmanager handles alerts sent by client applications such as the Promethe
 
 ## Installation
 
-### Dependencies
+### Build dependencies
+
+These dependencies are necessary for building Alertmanager. There are no runtime dependencies, as the resulting binary is statically linked.
 
 Debian family:
 
@@ -47,6 +49,8 @@ This is an example configuration that should cover most relevant aspects of the 
 ```yaml
 global:
   # The smarthost and SMTP sender used for mail notifications.
+  # If the host requires authentication, set SMTP_AUTH_USERNAME and SMTP_AUTH_PASSWORD
+  # environment variables.
   smtp_smarthost: 'localhost:25'
   smtp_from: 'alertmanager@example.org'
 

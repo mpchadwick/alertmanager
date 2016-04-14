@@ -198,7 +198,7 @@ func (w *Webhook) Notify(ctx context.Context, alerts ...*types.Alert) error {
 	resp.Body.Close()
 
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("unexpected status code %v", resp.StatusCode)
+		return fmt.Errorf("unexpected status code %v from %s", resp.StatusCode, w.URL)
 	}
 
 	return nil
@@ -227,6 +227,7 @@ func NewEmail(c *config.EmailConfig, t *template.Template) *Email {
 func (*Email) name() string { return "email" }
 
 // auth resolves a string of authentication mechanisms.
+<<<<<<< HEAD
 // Environmental variables are deprecated in favor of config
 // settings, but are maintained for backwards compatibility
 func (n *Email) auth(mechs string) (smtp.Auth, *tls.Config, error) {
@@ -234,6 +235,10 @@ func (n *Email) auth(mechs string) (smtp.Auth, *tls.Config, error) {
 	if username == "" {
 		username = os.Getenv("SMTP_AUTH_USERNAME")
 	}
+=======
+func (n *Email) auth(mechs string) (smtp.Auth, error) {
+	username := os.Getenv("SMTP_AUTH_USERNAME")
+>>>>>>> upstream/master
 
 	for _, mech := range strings.Split(mechs, " ") {
 		switch mech {
@@ -245,7 +250,7 @@ func (n *Email) auth(mechs string) (smtp.Auth, *tls.Config, error) {
 			if secret == "" {
 				continue
 			}
-			return smtp.CRAMMD5Auth(username, secret), nil, nil
+			return smtp.CRAMMD5Auth(username, secret), nil
 
 		case "PLAIN":
 			password := n.conf.AuthPassword
@@ -263,16 +268,12 @@ func (n *Email) auth(mechs string) (smtp.Auth, *tls.Config, error) {
 			// We need to know the hostname for both auth and TLS.
 			host, _, err := net.SplitHostPort(n.conf.Smarthost)
 			if err != nil {
-				return nil, nil, fmt.Errorf("invalid address: %s", err)
+				return nil, fmt.Errorf("invalid address: %s", err)
 			}
-			var (
-				auth = smtp.PlainAuth(identity, username, password, host)
-				cfg  = &tls.Config{ServerName: host}
-			)
-			return auth, cfg, nil
+			return smtp.PlainAuth(identity, username, password, host), nil
 		}
 	}
-	return nil, nil, nil
+	return nil, nil
 }
 
 // Notify implements the Notifier interface.
@@ -284,15 +285,26 @@ func (n *Email) Notify(ctx context.Context, as ...*types.Alert) error {
 	}
 	defer c.Quit()
 
+	// We need to know the hostname for both auth and TLS.
+	host, _, err := net.SplitHostPort(n.conf.Smarthost)
+	if err != nil {
+		return fmt.Errorf("invalid address: %s", err)
+	}
+
+	if n.conf.RequireTLS {
+		if ok, _ := c.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("require_tls: true (default), but %q does not advertise the STARTTLS extension", n.conf.Smarthost)
+		}
+		tlsConf := &tls.Config{ServerName: host}
+		if err := c.StartTLS(tlsConf); err != nil {
+			return fmt.Errorf("starttls failed: %s", err)
+		}
+	}
+
 	if ok, mech := c.Extension("AUTH"); ok {
-		auth, tlsConf, err := n.auth(mech)
+		auth, err := n.auth(mech)
 		if err != nil {
 			return err
-		}
-		if tlsConf != nil {
-			if err := c.StartTLS(tlsConf); err != nil {
-				return fmt.Errorf("starttls failed: %s", err)
-			}
 		}
 		if auth != nil {
 			if err := c.Auth(auth); err != nil {
@@ -616,7 +628,7 @@ type OpsGenie struct {
 	tmpl *template.Template
 }
 
-// NewOpsGenieDuty returns a new OpsGenie notifier.
+// NewOpsGenie returns a new OpsGenie notifier.
 func NewOpsGenie(c *config.OpsGenieConfig, t *template.Template) *OpsGenie {
 	return &OpsGenie{conf: c, tmpl: t}
 }
@@ -640,6 +652,11 @@ type opsGenieCreateMessage struct {
 
 type opsGenieCloseMessage struct {
 	*opsGenieMessage `json:",inline"`
+}
+
+type opsGenieErrorResponse struct {
+	Code  int    `json:"code"`
+	Error string `json:"error"`
 }
 
 // Notify implements the Notifier interface.
@@ -698,11 +715,25 @@ func (n *OpsGenie) Notify(ctx context.Context, as ...*types.Alert) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	if resp.StatusCode/100 != 2 {
+	if resp.StatusCode == 400 && alerts.Status() == model.AlertResolved {
 		body, _ := ioutil.ReadAll(resp.Body)
-		log.With("incident", key).Debugf("unexpected OpsGenie response %s: %s", resp.Status, body)
+
+		var responseMessage opsGenieErrorResponse
+		if err := json.Unmarshal(body, &responseMessage); err != nil {
+			return fmt.Errorf("could not parse error response %q", body)
+		}
+		const alreadyClosedError = 5
+		if responseMessage.Code == alreadyClosedError {
+			return nil
+		}
+		return fmt.Errorf("error when closing alert: code %d, error %q",
+			responseMessage.Code, responseMessage.Error)
+	} else if resp.StatusCode/100 != 2 {
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.With("incident", key).Debugf("unexpected OpsGenie response from %s (POSTed %s), %s: %s",
+			apiURL, msg, resp.Status, body)
 		return fmt.Errorf("unexpected status code %v", resp.StatusCode)
 	}
 	return nil
