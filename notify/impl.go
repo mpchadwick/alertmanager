@@ -227,24 +227,38 @@ func NewEmail(c *config.EmailConfig, t *template.Template) *Email {
 func (*Email) name() string { return "email" }
 
 // auth resolves a string of authentication mechanisms.
+// Environmental variables are deprecated in favor of config
+// settings, but are maintained for backwards compatibility
 func (n *Email) auth(mechs string) (smtp.Auth, *tls.Config, error) {
-	username := os.Getenv("SMTP_AUTH_USERNAME")
+	username := n.conf.AuthUsername
+	if username == "" {
+		username = os.Getenv("SMTP_AUTH_USERNAME")
+	}
 
 	for _, mech := range strings.Split(mechs, " ") {
 		switch mech {
 		case "CRAM-MD5":
-			secret := os.Getenv("SMTP_AUTH_SECRET")
+			secret := n.conf.AuthSecret
+			if secret == "" {
+				secret = os.Getenv("SMTP_AUTH_SECRET")
+			}
 			if secret == "" {
 				continue
 			}
 			return smtp.CRAMMD5Auth(username, secret), nil, nil
 
 		case "PLAIN":
-			password := os.Getenv("SMTP_AUTH_PASSWORD")
+			password := n.conf.AuthPassword
+			if password == "" {
+				password = os.Getenv("SMTP_AUTH_PASSWORD")
+			}
 			if password == "" {
 				continue
 			}
-			identity := os.Getenv("SMTP_AUTH_IDENTITY")
+			identity := n.conf.AuthIdentity
+			if identity == "" {
+				identity = os.Getenv("SMTP_AUTH_IDENTITY")
+			}
 
 			// We need to know the hostname for both auth and TLS.
 			host, _, err := net.SplitHostPort(n.conf.Smarthost)

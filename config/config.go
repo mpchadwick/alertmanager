@@ -160,6 +160,21 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				}
 				ec.From = c.Global.SMTPFrom
 			}
+			if ec.AuthUsername == "" {
+				if c.Global.SMTPAuthUsername != "" {
+					ec.AuthUsername = c.Global.SMTPAuthIdentity
+				}
+			}
+			if ec.AuthPassword == "" {
+				if c.Global.SMTPAuthPassword != "" {
+					ec.AuthPassword = c.Global.SMTPAuthPassword
+				}
+			}
+			if ec.AuthIdentity == "" {
+				if c.Global.SMTPAuthIdentity != "" {
+					ec.AuthIdentity = c.Global.SMTPAuthIdentity
+				}
+			}
 		}
 		for _, sc := range rcv.SlackConfigs {
 			if sc.APIURL == "" {
@@ -257,6 +272,10 @@ type GlobalConfig struct {
 
 	SMTPFrom         string `yaml:"smtp_from"`
 	SMTPSmarthost    string `yaml:"smtp_smarthost"`
+	SMTPAuthUsername string `yaml:"smtp_auth_username"`
+	SMTPAuthSecret   string `yaml:"smtp_auth_secret"`
+	SMTPAuthPassword string `yaml:"smtp_auth_password"`
+	SMTPAuthIdentity string `yaml:"smtp_auth_identity"`
 	SlackAPIURL      Secret `yaml:"slack_api_url"`
 	PagerdutyURL     string `yaml:"pagerduty_url"`
 	HipchatURL       string `yaml:"hipchat_url"`
